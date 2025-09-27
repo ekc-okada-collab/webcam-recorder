@@ -140,4 +140,5 @@ cython_debug/
 .vscode/
 
 # Other
-output/*.mp4
+videos/*.mp4
+Fonts/*

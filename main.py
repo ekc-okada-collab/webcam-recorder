@@ -4,8 +4,9 @@ import time
 from datetime import datetime
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QPushButton,
                              QLabel, QVBoxLayout, QHBoxLayout,
-                             QWidget, QComboBox, QSizePolicy,
+                             QWidget, QComboBox, QStatusBar,
                              QLineEdit, QFileDialog, QMessageBox)
+from PyQt6.QtCore import Qt
 # from PyQt6.QtGui import QImage, QPixmap
 import numpy as np
 import cv2
@@ -15,11 +16,15 @@ from PIL import Image, ImageDraw, ImageFont
 # フォントのパス（システムに応じて変更）
 FONT_PATH = f"Fonts/msgothic.ttc"
 
+def is_new_hour():
+    """現在時刻がちょうど新しい時間に切り替わったかを確認"""
+    now = datetime.now()
+    return now.minute == 0 and now.second == 0
+
 class WebCamRecordApp(QMainWindow):
     # 録画パラメータ変数定義
     dir_path = ""
-    fps = 10
-    section_time = 30 #単位(分)
+    # section_time = 30 #単位(分)
     pixel_list = ("SD", "HD")
     fps_list = ("10", "15", "30", "60")
 
@@ -27,7 +32,7 @@ class WebCamRecordApp(QMainWindow):
         super().__init__()
 
 
-        self.setWindowTitle("定点カメラレコーダー")
+        self.setWindowTitle("Webカメラ録画")
         self.setGeometry(100, 100, 300, 150)
 
         # メインウィジェットとレイアウト
@@ -38,12 +43,13 @@ class WebCamRecordApp(QMainWindow):
         # 1行目の水平レイアウト
         self.horizontalLayout_1 = QHBoxLayout()
         self.horizontalLayout_1.setObjectName("horizontalLayout_1")
+        # カメラ選択用のラベル
+        self.label_select_camera = QLabel()
+        self.label_select_camera.setText("カメラの選択 ")
+        self.horizontalLayout_1.addWidget(self.label_select_camera)
         # カメラ選択用のコンボボックス
         self.camera_selector = QComboBox()
         self.horizontalLayout_1.addWidget(self.camera_selector)
-        # カメラ接続ボタン
-        self.connect_camera_button = QPushButton("カメラ接続")
-        self.horizontalLayout_1.addWidget(self.connect_camera_button)
         self.v_layout.addLayout(self.horizontalLayout_1)
 
         # 出力先フォルダの選択
@@ -87,26 +93,23 @@ class WebCamRecordApp(QMainWindow):
         self.horizontalLayout_3.addWidget(self.label_3)
         self.v_layout.addLayout(self.horizontalLayout_3)
 
-        # 1ファイルの最大録画時間設定
-        self.horizontalLayout_4 = QHBoxLayout()
-        self.horizontalLayout_4.setObjectName("horizontalLayout_4")
-        # 画質選択用のラベル
-        self.label_4 = QLabel()
-        self.label_4.setText("録画ファイルを ")
-        self.horizontalLayout_4.addWidget(self.label_4)
-        
-        self.lineEdit_record_section_time = QLineEdit()
-        self.lineEdit_record_section_time.setObjectName("lineEdit_record_section_time")
-        self.lineEdit_record_section_time.setText("60")
-        self.horizontalLayout_4.addWidget(self.lineEdit_record_section_time)
-        
-        self.label_5 = QLabel()
-        self.label_5.setText("分ごとに分割して録画する")
-        self.horizontalLayout_4.addWidget(self.label_5)
-
-        self.v_layout.addLayout(self.horizontalLayout_4)
-
-
+        # # 1ファイルの最大録画時間設定
+        # self.horizontalLayout_4 = QHBoxLayout()
+        # self.horizontalLayout_4.setObjectName("horizontalLayout_4")
+        # # 最大録画時間設定用のラベル
+        # self.label_4 = QLabel()
+        # self.label_4.setText("録画ファイルを ")
+        # self.horizontalLayout_4.addWidget(self.label_4)
+        # # 最大録画時間設定用のラインエディット
+        # self.lineEdit_record_section_time = QLineEdit()
+        # self.lineEdit_record_section_time.setObjectName("lineEdit_record_section_time")
+        # self.lineEdit_record_section_time.setText("60")
+        # self.horizontalLayout_4.addWidget(self.lineEdit_record_section_time)
+        # # 最大録画時間設定用のラベル2
+        # self.label_5 = QLabel()
+        # self.label_5.setText("分ごとに分割して録画する")
+        # self.horizontalLayout_4.addWidget(self.label_5)
+        # self.v_layout.addLayout(self.horizontalLayout_4)
 
         # 録画開始ボタン
         self.record_start_button = QPushButton("録画開始")
@@ -120,6 +123,13 @@ class WebCamRecordApp(QMainWindow):
         self.v_layout.addWidget(self.record_stop_button)
         self.record_stop_button.setEnabled(False)  # 停止ボタンは初期状態で無効
 
+        # ステータスバーを作成して会社名を設定
+        status_bar = QStatusBar()
+        self.setStatusBar(status_bar)
+        company_label = QLabel("© 2025 株式会社アース開発コンサルタント")
+        company_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_bar.addPermanentWidget(company_label)
+
         # カメラリストを取得
         self.available_cameras = self.get_available_cameras()
         self.camera_selector.addItems(self.available_cameras)
@@ -131,7 +141,6 @@ class WebCamRecordApp(QMainWindow):
         self.video_writer = None  # 動画ライターオブジェクト
 
         # イベント接続
-        self.connect_camera_button.clicked.connect(self.conect_camera)
         self.record_start_button.clicked.connect(self.record_video)
         self.record_stop_button.clicked.connect(self.stop_recording)
 
@@ -141,6 +150,14 @@ class WebCamRecordApp(QMainWindow):
         if folder:
             self.lineEdit_path.setText(folder)
             self.dir_path = folder
+        # フォルダ存在確認
+        if not os.path.exists(self.dir_path) and not os.path.isdir(self.dir_path):
+            QMessageBox.warning(self, "警告", "有効な保存先フォルダが選択されていません。")
+            self.recording = False
+            self.record_start_button.setEnabled(False)
+            self.record_stop_button.setEnabled(False)
+            return
+        self.record_start_button.setEnabled(True)
 
 
     def get_available_cameras(self):
@@ -159,22 +176,18 @@ class WebCamRecordApp(QMainWindow):
         if self.capture:
             self.capture.release()
         self.record_start_button.setEnabled(True)
-        self.connect_camera_button.setEnabled(False)
 
     def record_video(self):
         self.recording = True
         self.pushButton_select_path.setEnabled(False)
         self.record_start_button.setEnabled(False)
         self.record_stop_button.setEnabled(True)
-        
-        if not os.path.exists(self.dir_path) and not os.path.isdir(self.dir_path):
-            QMessageBox.warning(self, "警告", "有効な保存先フォルダが選択されていません。")
-            self.recording = False
-            self.pushButton_select_path.setEnabled(True)
-            self.connect_camera_button.setEnabled(True)
-            self.record_start_button.setEnabled(True)
-            self.record_stop_button.setEnabled(False)
-            return
+
+        """カメラを選択"""
+        self.camera_index = self.camera_selector.currentIndex()
+        if self.capture:
+            self.capture.release()
+        print(f"カメラ{self.camera_index}で録画します。")
 
         try:
             fps_txt = self.fps_selector.currentText()
@@ -184,13 +197,13 @@ class WebCamRecordApp(QMainWindow):
             print("ValueError:fpsを10に設定します。")
             fps = 10
 
-        try:
-            section_time_txt = self.lineEdit_record_section_time.text()
-            section_time = int(section_time_txt)
-            print(f"１ファイルの長さを{section_time}分に設定しました。")
-        except ValueError:
-            print("1ファイルの長さを60分に設定しました。")
-            section_time=60
+        # try:
+        #     section_time_txt = self.lineEdit_record_section_time.text()
+        #     section_time = int(section_time_txt)
+        #     print(f"１ファイルの長さを{section_time}分に設定しました。")
+        # except ValueError:
+        #     print("1ファイルの長さを60分に設定しました。")
+        #     section_time=60
         
         camera_pixel_index = self.pixel_size_selector.currentIndex()
         if camera_pixel_index == 0:
@@ -206,6 +219,9 @@ class WebCamRecordApp(QMainWindow):
 
         # Webカメラを開く
         self.capture = cv2.VideoCapture(self.camera_index)
+        if not self.capture.isOpened():
+            print("カメラを開けません")
+            return
         # カメラの解像度を設定
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, camera_pixel[0])
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_pixel[1])
@@ -215,20 +231,14 @@ class WebCamRecordApp(QMainWindow):
         actual_height = self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
         print(f"カメラ解像度: {actual_width}x{actual_height}")
 
-        if not self.capture.isOpened():
-            print("カメラを開けません")
-            return
-        # os.makedirs(output_dir, exist_ok=True)
-        
-        file_no = 1
-        section_start_time = time.time()
+
+        # section_start_time = time.time()
 
         interval = 1.0 / fps  # キャプチャ間隔（秒）
-        last_capture_time = time.time()
+        last_capture_time = time.time() # 最後にキャプチャした時間格納変数
 
         # 録画ファイルの設定
         output_file = f"mv_{str_now}.mp4"
-
         outputpath = os.path.join(self.dir_path, output_file)
         fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # MJPEGコーデック
         video = cv2.VideoWriter(outputpath, fourcc, fps, (int(self.capture.get(3)), int(self.capture.get(4))))
@@ -238,15 +248,18 @@ class WebCamRecordApp(QMainWindow):
         while True:
             now = time.time()
             # 一定時間経過したら新しいファイルに切り替え
-            if now - section_start_time >= section_time*60:
+            # if now - section_start_time >= section_time*60:
+            
+            # 毎時00分でファイルを切り替え
+            if is_new_hour():
                 video.release()  # 現在の録画ファイルを閉じる
-                file_no += 1
-                section_start_time = now
+                # section_start_time = now
                 str_now = datetime.now().strftime('%Y-%m-%d-%H-%M')
                 output_file = f"mv_{str_now}.mp4"
                 outputpath = os.path.join(self.dir_path, output_file)
                 video = cv2.VideoWriter(outputpath, fourcc, fps, (int(self.capture.get(3)), int(self.capture.get(4))))
                 print(f"新しい録画ファイルに切り替え: {outputpath}")
+                time.sleep(1)  # 秒単位の切り替えを防ぐための待機
             else:
                 # 一定間隔でフレームをキャプチャ
                 if now - last_capture_time >= interval:
@@ -260,7 +273,7 @@ class WebCamRecordApp(QMainWindow):
                     # Pillowで日時を描画
                     draw = ImageDraw.Draw(frame_pil)
                     font = ImageFont.truetype(FONT_PATH, 32)  # フォントサイズを指定
-                    draw.text((10, 10), time_stamp, font=font, fill=(255, 255, 255))  # 白色で描画
+                    draw.text((10, 10), time_stamp, font=font, fill=(255, 140, 0))  # ダークオレンジで描画
                     # Pillowの画像をOpenCV形式に戻す
                     frame = cv2.cvtColor(np.array(frame_pil), cv2.COLOR_RGB2BGR)
 
@@ -279,7 +292,6 @@ class WebCamRecordApp(QMainWindow):
         self.capture.release()  # カメラを解放
     
     def stop_recording(self):
-        self.connect_camera_button.setEnabled(True)
         self.pushButton_select_path.setEnabled(True)
         self.record_start_button.setEnabled(False)
         self.record_stop_button.setEnabled(False)
